@@ -106,8 +106,9 @@ export async function updateAnggotaProfile(formData: FormData) {
 
     revalidatePath('/portal');
     return { success: true, message: 'Data pemberkasan dan dokumen berhasil disimpan ke Supabase!' };
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error updateAnggotaProfile:', error);
-    return { success: false, message: 'Gagal memperbarui profil dan berkas.' };
+    // Menampilkan detail error asli ke tampilan web
+    return { success: false, message: `Gagal: ${error.message || JSON.stringify(error)}` };
   }
 }
