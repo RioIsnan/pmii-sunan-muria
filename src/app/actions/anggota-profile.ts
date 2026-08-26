@@ -12,17 +12,17 @@ const pool = new Pool({ connectionString });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
-// Inisialisasi Supabase Client untuk Server Action
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
-
 export async function updateAnggotaProfile(formData: FormData) {
   const session = await getAnggotaSession();
   if (!session) {
     return { success: false, message: 'Akses ditolak. Silakan login ulang.' };
   }
+
+  // Inisialisasi Supabase Client secara lokal di dalam Server Action
+  const supabase = createClient(
+    'https://qklqviaqjnxcjxxfywk.supabase.co',
+    'sb_publishable_ka-X43p5rWH15U0C6pdAIg_stx_125i'
+  );
 
   const nim = formData.get('nim') as string;
   const nomorHp = formData.get('nomorHp') as string;
@@ -50,7 +50,7 @@ export async function updateAnggotaProfile(formData: FormData) {
       const buffer = Buffer.from(arrayBuffer);
 
       const { error: uploadError } = await supabase.storage
-        .from('uploads') // Pastikan nama bucket di Supabase sesuai ('uploads')
+        .from('uploads')
         .upload(`kader/${ktpName}`, buffer, {
           contentType: ktpFile.type,
           upsert: true,
