@@ -1,0 +1,559 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ==========================================
+// 1. ENUMS (ROLE, POSISI & KADERISASI)
+// ==========================================
+
+enum GlobalRole {
+  SUPER_ADMIN
+  ADMIN_KOMISARIAT
+  ADMIN_RAYON
+}
+
+enum StatusKader {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum JenjangKaderisasi {
+  MAPABA
+  PKD
+  PKL
+}
+
+enum PosisiKepengurusan {
+  ANGGOTA
+  PENGURUS_RAYON
+  PENGURUS_KOMISARIAT
+  ALUMNI
+}
+
+enum TipeSurat {
+  SURAT_MASUK
+  SURAT_KELUAR
+}
+
+enum TipeKas {
+  PEMASUKAN
+  PENGELUARAN
+}
+
+// ==========================================
+// 2. MODEL UTAMA ORGANISASI & USER
+// ==========================================
+
+model Rayon {
+  id               String             @id @default(uuid())
+  code             String             @unique
+  name             String
+  kader            Kader[]
+  users            User[]
+  surat            Surat[]
+  keuangan         Keuangan[]
+  kegiatanKeuangan KegiatanKeuangan[]
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@map("Rayon")
+}
+
+model User {
+  id        String     @id @default(uuid())
+  username  String     @unique
+  password  String
+  nama      String
+  role      GlobalRole @default(ADMIN_RAYON)
+  rayonId   String?
+  rayon     Rayon?     @relation(fields: [rayonId], references: [id])
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@map("User")
+}
+
+model Kader {
+  id                   String             @id @default(uuid())
+  nik                  String?            @unique
+  namaLengkap          String
+  email                String             @unique
+  password             String             @default("")
+  nomorHp              String
+  fakultas             String
+  prodi                String
+  nim                  String?            @unique
+  
+  // Berkas & Pemberkasan Administrasi Lengkap
+  alamat               String?            
+  tanggalLahir         DateTime?          
+  fotoUrl              String?
+  ktpUrl               String?            
+  ktmUrl               String?            
+  
+  isProfileComplete    Boolean            @default(false) 
+  
+  // --- 4 TAHAPAN VERIFIKASI RESMI MAPABA ---
+  isVerifiedBerkas     Boolean            @default(false) // 1. Verifikasi Berkas (KTP/KTM/Data)
+  isVerifiedPreTest    Boolean            @default(false) // 2. Kelulusan Pre-Test
+  isVerifiedMapaba     Boolean            @default(false) // 3. Keikutsertaan / Kehadiran MAPABA
+  isVerifiedPostTest   Boolean            @default(false) // 4. Kelulusan Post-Test
+  // ----------------------------------------
+
+  resetPasswordToken   String?            
+  resetPasswordExpires DateTime?          
+  status               StatusKader        @default(PENDING)
+  jenjang              JenjangKaderisasi  @default(MAPABA)
+  posisi               String             @default("ANGGOTA")
+  rayonId              String
+  rayon                Rayon              @relation(fields: [rayonId], references: [id])
+  asesmen             AsesmenKader[]
+  ktaNumber            String?            @unique
+  
+  anggotaUser          AnggotaUser?
+  
+  kaderisasiLogs       KaderisasiLog[]
+  presensiLogs         PresensiLog[]
+  quizAttempts         QuizAttempt[]
+  showcases            KaderShowcase[]
+  ideProker            IdeProker[]
+  ideVotes             IdeVote[]
+  sertifikats          SertifikatKader[]
+  formSubmissions      FormSubmission[]
+
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@map("Kader")
+}
+
+// ==========================================
+// 3. MODUL SEKRETARIAT (ARSIP & TEMPLATE SURAT)
+// ==========================================
+
+model Surat {
+  id          String    @id @default(uuid())
+  nomorSurat  String
+  judulSurat  String
+  tipe        TipeSurat
+  tanggal     DateTime
+  fileUrl     String?
+  fileName    String?
+  keterangan  String?
+  rayonId     String?
+  rayon       Rayon?    @relation(fields: [rayonId], references: [id])
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("Surat")
+}
+
+model SuratTemplate {
+  id             String   @id @default(uuid())
+  namaTemplate   String
+  kodeSurat      String   @unique
+  formatNomor    String
+  isiTemplate    String
+  penandatangan1 String
+  penandatangan2 String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("SuratTemplate")
+}
+
+// ==========================================
+// 4. MODUL BENDAHARA (KEUANGAN / KAS)
+// ==========================================
+
+model Keuangan {
+  id          String   @id @default(uuid())
+  keterangan  String
+  jumlah      Float
+  tipe        TipeKas
+  tanggal     DateTime @default(now())
+  rayonId     String?
+  rayon       Rayon?   @relation(fields: [rayonId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("Keuangan")
+}
+
+model KegiatanKeuangan {
+  id           String              @id @default(uuid())
+  namaKegiatan String
+  deskripsi    String?
+  rayonId      String?
+  rayon        Rayon?              @relation(fields: [rayonId], references: [id])
+  transaksi    TransaksiKeuangan[]
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  @@map("KegiatanKeuangan")
+}
+
+model TransaksiKeuangan {
+  id                 String           @id @default(uuid())
+  kategori           String
+  jumlah             Float
+  tipe               TipeKas
+  keterangan         String?
+  kegiatanKeuanganId String
+  kegiatanKeuangan   KegiatanKeuangan @relation(fields: [kegiatanKeuanganId], references: [id], onDelete: Cascade)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@map("TransaksiKeuangan")
+}
+
+// ==========================================
+// 5. MODUL CMS (BERITA & AGENDA)
+// ==========================================
+
+model Berita {
+  id        String   @id @default(uuid())
+  slug      String   @unique
+  judul     String
+  konten    String
+  coverUrl  String?
+  penulis   String
+  published Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("Berita")
+}
+
+model Agenda {
+  id        String         @id @default(uuid())
+  judul     String
+  lokasi    String
+  tanggal   DateTime
+  deskripsi String?
+  sesensi   PresensiSesi[]
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@map("Agenda")
+}
+
+// ==========================================
+// 6. MODUL PORTAL ANGGOTA & PROGRAM MAGANG
+// ==========================================
+
+model AnggotaUser {
+  id            String             @id @default(uuid())
+  kaderId       String             @unique
+  kader         Kader              @relation(fields: [kaderId], references: [id], onDelete: Cascade)
+  password      String
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  magang        MagangApplication?
+
+  @@map("AnggotaUser")
+}
+
+enum StatusMagang {
+  MENDAFTAR
+  DITINJAU
+  DITERIMA
+  DITOLAK
+  SELESAI
+}
+
+model MagangApplication {
+  id            String       @id @default(uuid())
+  anggotaUserId String       @unique
+  anggotaUser   AnggotaUser  @relation(fields: [anggotaUserId], references: [id], onDelete: Cascade)
+  minatKeahlian String
+  pengalaman    String?
+  motivasi      String
+  status        StatusMagang @default(MENDAFTAR)
+  catatanAdmin  String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+
+  @@map("MagangApplication")
+}
+
+// ==========================================
+// 7. TAMBAHAN FITUR
+// ==========================================
+
+model PresensiSesi {
+  id           String        @id @default(uuid())
+  agendaId     String
+  agenda       Agenda        @relation(fields: [agendaId], references: [id], onDelete: Cascade)
+  namaSesi     String
+  tokenDinamis String
+  waktuMulai   DateTime
+  waktuSelesai DateTime
+  logs         PresensiLog[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@map("PresensiSesi")
+}
+
+model PresensiLog {
+  id              String       @id @default(uuid())
+  sesiId          String
+  sesi            PresensiSesi @relation(fields: [sesiId], references: [id], onDelete: Cascade)
+  kaderId         String
+  kader           Kader        @relation(fields: [kaderId], references: [id], onDelete: Cascade)
+  waktuHadir      DateTime     @default(now())
+  statusKehadiran String       @default("HADIR")
+
+  @@unique([sesiId, kaderId])
+  @@map("PresensiLog")
+}
+
+model LibraryMateri {
+  id          String   @id @default(uuid())
+  judul       String
+  kategori    String
+  deskripsi   String?
+  fileUrl     String
+  penulis     String?  @default("Pengurus Komisariat")
+  downloads   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model KaderisasiLog {
+  id             String            @id @default(uuid())
+  kaderId        String
+  kader          Kader             @relation(fields: [kaderId], references: [id], onDelete: Cascade)
+  jenjang        JenjangKaderisasi
+  tahun          Int
+  tempat         String?
+  sertifikatNo   String?
+  keterangan     String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@map("KaderisasiLog")
+}
+
+model Quiz {
+  id          String         @id @default(uuid())
+  judul       String
+  deskripsi   String?
+  isActive    Boolean        @default(true)
+  pertanyaan  QuizQuestion[]
+  attempts    QuizAttempt[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@map("Quiz")
+}
+
+model QuizQuestion {
+  id           String   @id @default(uuid())
+  quizId       String
+  quiz         Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  pertanyaan   String
+  pilihanA     String
+  pilihanB     String
+  pilihanC     String
+  pilihanD     String
+  jawabanBenar String
+  createdAt    DateTime @default(now())
+
+  @@map("QuizQuestion")
+}
+
+model QuizAttempt {
+  id        String   @id @default(uuid())
+  quizId    String
+  quiz      Quiz     @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  kaderId   String
+  kader     Kader    @relation(fields: [kaderId], references: [id], onDelete: Cascade)
+  skor      Float
+  isPassed  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("QuizAttempt")
+}
+
+model CareerBoard {
+  id              String   @id @default(uuid())
+  judul           String
+  instansi        String
+  tipe            String
+  deskripsi       String
+  linkPendaftaran String
+  deadline        DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("CareerBoard")
+}
+
+model KaderShowcase {
+  id          String   @id @default(uuid())
+  kaderId     String
+  kader       Kader    @relation(fields: [kaderId], references: [id], onDelete: Cascade)
+  judulKarya  String
+  kategori    String
+  deskripsi   String
+  tautan      String?
+  coverUrl    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("KaderShowcase")
+}
+
+model AlumniDirectory {
+  id                  String   @id @default(uuid())
+  namaLengkap         String
+  tahunLulusAngkatan  String
+  fakultasAsal        String
+  pekerjaan           String
+  instansi            String
+  nomorHp             String?
+  linkedin            String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@map("AlumniDirectory")
+}
+
+model AssetBarang {
+  id             String            @id @default(uuid())
+  namaBarang     String
+  jumlahTotal    Int
+  kondisi        String
+  peminjaman     AssetPeminjaman[]
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@map("AssetBarang")
+}
+
+model AssetPeminjaman {
+  id             String      @id @default(uuid())
+  barangId       String
+  barang         AssetBarang @relation(fields: [barangId], references: [id], onDelete: Cascade)
+  peminjamNama   String
+  jumlahPinjam   Int
+  tanggalPinjam  DateTime    @default(now())
+  tanggalKembali DateTime?
+  status         String      @default("DIPINJAM")
+  createdAt      DateTime    @default(now())
+
+  @@map("AssetPeminjaman")
+}
+
+model EMagazine {
+  id          String   @id @default(uuid())
+  judul       String
+  edisi       String
+  deskripsi   String?
+  filePdfUrl  String
+  coverUrl    String?
+  penulis     String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("EMagazine")
+}
+
+model IdeProker {
+  id          String    @id @default(uuid())
+  kaderId     String
+  kader       Kader     @relation(fields: [kaderId], references: [id], onDelete: Cascade)
+  judul       String
+  deskripsi   String
+  votesCount  Int       @default(0)
+  status      String    @default("DIUSULKAN")
+  votes       IdeVote[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("IdeProker")
+}
+
+model IdeVote {
+  id      String    @id @default(uuid())
+  ideId   String
+  ide     IdeProker @relation(fields: [ideId], references: [id], onDelete: Cascade)
+  kaderId String
+  kader   Kader     @relation(fields: [kaderId], references: [id], onDelete: Cascade)
+
+  @@unique([ideId, kaderId])
+  @@map("IdeVote")
+}
+
+model WaGatewayLog {
+  id           String   @id @default(uuid())
+  nomorTujuan  String
+  pesan        String
+  status       String
+  createdAt    DateTime @default(now())
+
+  @@map("WaGatewayLog")
+}
+
+model SertifikatKader {
+  id              String   @id @default(uuid())
+  kaderId         String
+  kader           Kader    @relation(fields: [kaderId], references: [id], onDelete: Cascade)
+  namaKegiatan    String
+  nomorSertifikat String   @unique
+  filePdfUrl      String?
+  createdAt       DateTime @default(now())
+
+  @@map("SertifikatKader")
+}
+
+model CustomForm {
+  id          String           @id @default(uuid())
+  judul       String
+  deskripsi   String?
+  isActive    Boolean          @default(true)
+  fieldsJson  String
+  submissions FormSubmission[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@map("CustomForm")
+}
+
+model FormSubmission {
+  id        String     @id @default(uuid())
+  formId    String
+  form      CustomForm @relation(fields: [formId], references: [id], onDelete: Cascade)
+  kaderId   String?
+  kader     Kader?     @relation(fields: [kaderId], references: [id], onDelete: SetNull)
+  dataJson  String
+  createdAt DateTime   @default(now())
+
+  @@map("FormSubmission")
+}
+
+model AsesmenKader {
+  id           String   @id @default(uuid())
+  kaderId      String
+  kader        Kader    @relation(fields: [kaderId], references: [id], onDelete: Cascade)
+  tipeAsesmen  String   // 'PRE_TEST' atau 'POST_TEST'
+  
+  jawaban1     String?
+  uraian1      String?
+  jawaban2     String?
+  uraian2      String?
+  jawaban3     String?
+  uraian3      String?
+  jawaban4     String?
+  uraian4      String?
+  
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
