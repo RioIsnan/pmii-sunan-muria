@@ -2,8 +2,13 @@
 
 import { prisma } from '@/lib/prisma';
 import { getAdminSession } from '@/app/actions/auth';
-import { writeFile, mkdir } from 'fs/promises';
-import path from 'path';
+import { createClient } from '@supabase/supabase-js';
+
+// Inisialisasi Supabase Client
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 export async function getLibraryMateriList() {
   try {
@@ -41,19 +46,33 @@ export async function createLibraryMateri(formData: FormData) {
         return { success: false, message: 'Silakan pilih file dokumen yang valid terlebih dahulu!' };
       }
 
-      const bytes = await file.arrayBuffer();
-      const buffer = Buffer.from(bytes);
+      // 1. Siapkan nama file unik untuk Supabase Storage
+      const fileExt = file.name.split('.').pop();
       const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-      const filename = uniqueSuffix + '-' + file.name.replaceAll(' ', '_');
+      const filename = `library/${uniqueSuffix}-${file.name.replaceAll(' ', '_')}`;
       
-      const uploadDir = path.join(process.cwd(), 'public/uploads');
-      
-      try {
-        await mkdir(uploadDir, { recursive: true });
-      } catch (err) {}
+      const arrayBuffer = await file.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
 
-      await writeFile(path.join(uploadDir, filename), buffer);
-      fileUrl = `/uploads/${filename}`;
+      // 2. Upload ke Supabase Storage (Bucket: 'uploads')
+      const { error: uploadError } = await supabase.storage
+        .from('uploads')
+        .upload(filename, buffer, {
+          contentType: file.type,
+          upsert: true,
+        });
+
+      if (uploadError) {
+        throw new Error(`Gagal upload ke Supabase: ${uploadError.message}`);
+      }
+
+      // 3. Ambil Public URL dari file yang di-upload
+      const { data: publicUrlData } = supabase.storage
+        .from('uploads')
+        .getPublicUrl(filename);
+
+      fileUrl = publicUrlData.publicUrl;
+
     } else {
       fileUrl = formData.get('fileUrl') as string;
       if (!fileUrl) {

@@ -5,13 +5,18 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import { getAnggotaSession } from './anggota-auth';
 import { revalidatePath } from 'next/cache';
-import fs from 'fs';
-import path from 'path';
+import { createClient } from '@supabase/supabase-js';
 
 const connectionString = process.env.DIRECT_URL || process.env.DATABASE_URL;
 const pool = new Pool({ connectionString });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
+
+// Inisialisasi Supabase Client untuk Server Action
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 export async function updateAnggotaProfile(formData: FormData) {
   const session = await getAnggotaSession();
@@ -37,26 +42,53 @@ export async function updateAnggotaProfile(formData: FormData) {
     let ktpUrl = undefined;
     let ktmUrl = undefined;
 
-    // Helper sederhana untuk menyimpan file upload ke folder public/uploads
-    const uploadDir = path.join(process.cwd(), 'public', 'uploads');
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-
+    // 1. Upload KTP ke Supabase Storage (Bucket: 'uploads')
     if (ktpFile && ktpFile.size > 0) {
-      const ktpName = `${session.id}-ktp-${Date.now()}${path.extname(ktpFile.name)}`;
-      const ktpBuffer = Buffer.from(await ktpFile.arrayBuffer());
-      fs.writeFileSync(path.join(uploadDir, ktpName), ktpBuffer);
-      ktpUrl = `/uploads/${ktpName}`;
+      const fileExt = ktpFile.name.split('.').pop();
+      const ktpName = `${session.id}-ktp-${Date.now()}.${fileExt}`;
+      const arrayBuffer = await ktpFile.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      const { error: uploadError } = await supabase.storage
+        .from('uploads') // Pastikan nama bucket di Supabase sesuai ('uploads')
+        .upload(`kader/${ktpName}`, buffer, {
+          contentType: ktpFile.type,
+          upsert: true,
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data: publicUrlData } = supabase.storage
+        .from('uploads')
+        .getPublicUrl(`kader/${ktpName}`);
+
+      ktpUrl = publicUrlData.publicUrl;
     }
 
+    // 2. Upload KTM ke Supabase Storage
     if (ktmFile && ktmFile.size > 0) {
-      const ktmName = `${session.id}-ktm-${Date.now()}${path.extname(ktmFile.name)}`;
-      const ktmBuffer = Buffer.from(await ktmFile.arrayBuffer());
-      fs.writeFileSync(path.join(uploadDir, ktmName), ktmBuffer);
-      ktmUrl = `/uploads/${ktmName}`;
+      const fileExt = ktmFile.name.split('.').pop();
+      const ktmName = `${session.id}-ktm-${Date.now()}.${fileExt}`;
+      const arrayBuffer = await ktmFile.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+
+      const { error: uploadError } = await supabase.storage
+        .from('uploads')
+        .upload(`kader/${ktmName}`, buffer, {
+          contentType: ktmFile.type,
+          upsert: true,
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data: publicUrlData } = supabase.storage
+        .from('uploads')
+        .getPublicUrl(`kader/${ktmName}`);
+
+      ktmUrl = publicUrlData.publicUrl;
     }
 
+    // 3. Update data ke Database via Prisma
     await prisma.kader.update({
       where: { id: session.id },
       data: {
@@ -73,7 +105,7 @@ export async function updateAnggotaProfile(formData: FormData) {
     });
 
     revalidatePath('/portal');
-    return { success: true, message: 'Data pemberkasan dan dokumen berhasil disimpan!' };
+    return { success: true, message: 'Data pemberkasan dan dokumen berhasil disimpan ke Supabase!' };
   } catch (error) {
     console.error('Error updateAnggotaProfile:', error);
     return { success: false, message: 'Gagal memperbarui profil dan berkas.' };
