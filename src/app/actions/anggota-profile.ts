@@ -35,21 +35,30 @@ export async function updateAnggotaProfile(formData: FormData) {
     let ktpUrl = undefined;
     let ktmUrl = undefined;
 
-    // Ubah file KTP menjadi Base64 string agar langsung tersimpan aman
+    // Batasan maksimal ukuran file 2MB (2 * 1024 * 1024 bytes)
+    const MAX_FILE_SIZE = 2 * 1024 * 1024;
+
+    // 1. Proses File KTP & Batasi Ukurannya
     if (ktpFile && ktpFile.size > 0) {
+      if (ktpFile.size > MAX_FILE_SIZE) {
+        return { success: false, message: 'Ukuran file KTP terlalu besar! Maksimal 2MB.' };
+      }
       const arrayBuffer = await ktpFile.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
       ktpUrl = `data:${ktpFile.type};base64,${buffer.toString('base64')}`;
     }
 
-    // Ubah file KTM menjadi Base64 string
+    // 2. Proses File KTM & Batasi Ukurannya
     if (ktmFile && ktmFile.size > 0) {
+      if (ktmFile.size > MAX_FILE_SIZE) {
+        return { success: false, message: 'Ukuran file KTM terlalu besar! Maksimal 2MB.' };
+      }
       const arrayBuffer = await ktmFile.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
       ktmUrl = `data:${ktmFile.type};base64,${buffer.toString('base64')}`;
     }
 
-    // Update data dan file langsung ke Database via Prisma
+    // 3. Simpan data teks dan file (Base64) ke Database via Prisma
     await prisma.kader.update({
       where: { id: session.id },
       data: {
