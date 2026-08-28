@@ -5,7 +5,6 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import { getAnggotaSession } from './anggota-auth';
 import { revalidatePath } from 'next/cache';
-import { createClient } from '@supabase/supabase-js';
 
 const connectionString = process.env.DIRECT_URL || process.env.DATABASE_URL;
 const pool = new Pool({ connectionString });
@@ -17,12 +16,6 @@ export async function updateAnggotaProfile(formData: FormData) {
   if (!session) {
     return { success: false, message: 'Akses ditolak. Silakan login ulang.' };
   }
-
-  // Inisialisasi Supabase Client secara lokal di dalam Server Action
-  const supabase = createClient(
-    'https://qklqviaqjnxcjxxfywk.supabase.co',
-    'sb_publishable_ka-X43p5rWH15U0C6pdAIg_stx_125i'
-  );
 
   const nim = formData.get('nim') as string;
   const nomorHp = formData.get('nomorHp') as string;
@@ -42,53 +35,30 @@ export async function updateAnggotaProfile(formData: FormData) {
     let ktpUrl = undefined;
     let ktmUrl = undefined;
 
-    // 1. Upload KTP ke Supabase Storage (Bucket: 'uploads')
+    // Batasan maksimal ukuran file 2MB (2 * 1024 * 1024 bytes)
+    const MAX_FILE_SIZE = 2 * 1024 * 1024;
+
+    // 1. Proses File KTP & Batasi Ukurannya
     if (ktpFile && ktpFile.size > 0) {
-      const fileExt = ktpFile.name.split('.').pop();
-      const ktpName = `${session.id}-ktp-${Date.now()}.${fileExt}`;
+      if (ktpFile.size > MAX_FILE_SIZE) {
+        return { success: false, message: 'Ukuran file KTP terlalu besar! Maksimal 2MB.' };
+      }
       const arrayBuffer = await ktpFile.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
-
-      const { error: uploadError } = await supabase.storage
-        .from('uploads')
-        .upload(`kader/${ktpName}`, buffer, {
-          contentType: ktpFile.type,
-          upsert: true,
-        });
-
-      if (uploadError) throw uploadError;
-
-      const { data: publicUrlData } = supabase.storage
-        .from('uploads')
-        .getPublicUrl(`kader/${ktpName}`);
-
-      ktpUrl = publicUrlData.publicUrl;
+      ktpUrl = `data:${ktpFile.type};base64,${buffer.toString('base64')}`;
     }
 
-    // 2. Upload KTM ke Supabase Storage
+    // 2. Proses File KTM & Batasi Ukurannya
     if (ktmFile && ktmFile.size > 0) {
-      const fileExt = ktmFile.name.split('.').pop();
-      const ktmName = `${session.id}-ktm-${Date.now()}.${fileExt}`;
+      if (ktmFile.size > MAX_FILE_SIZE) {
+        return { success: false, message: 'Ukuran file KTM terlalu besar! Maksimal 2MB.' };
+      }
       const arrayBuffer = await ktmFile.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
-
-      const { error: uploadError } = await supabase.storage
-        .from('uploads')
-        .upload(`kader/${ktmName}`, buffer, {
-          contentType: ktmFile.type,
-          upsert: true,
-        });
-
-      if (uploadError) throw uploadError;
-
-      const { data: publicUrlData } = supabase.storage
-        .from('uploads')
-        .getPublicUrl(`kader/${ktmName}`);
-
-      ktmUrl = publicUrlData.publicUrl;
+      ktmUrl = `data:${ktmFile.type};base64,${buffer.toString('base64')}`;
     }
 
-    // 3. Update data ke Database via Prisma
+    // 3. Simpan data teks dan file (Base64) ke Database via Prisma
     await prisma.kader.update({
       where: { id: session.id },
       data: {
@@ -105,9 +75,9 @@ export async function updateAnggotaProfile(formData: FormData) {
     });
 
     revalidatePath('/portal');
-    return { success: true, message: 'Data pemberkasan dan dokumen berhasil disimpan ke Supabase!' };
-  } catch (error) {
+    return { success: true, message: 'Data pemberkasan dan dokumen berhasil disimpan!' };
+  } catch (error: any) {
     console.error('Error updateAnggotaProfile:', error);
-    return { success: false, message: 'Gagal memperbarui profil dan berkas.' };
+    return { success: false, message: `Gagal: ${error.message || JSON.stringify(error)}` };
   }
 }
